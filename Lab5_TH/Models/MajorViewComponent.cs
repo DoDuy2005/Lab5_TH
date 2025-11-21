@@ -1,9 +1,8 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Lab5_TH.Data;
+
+using Microsoft.AspNetCore.Mvc;
 using Lab5_TH.Data;
-using Lab5_TH.Models;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
 
 namespace Lab5_TH.ViewComponents
 {
@@ -18,13 +17,15 @@ namespace Lab5_TH.ViewComponents
 
         public async Task<IViewComponentResult> InvokeAsync()
         {
-            var majors = await GetMajorsAsync();
-            return View("RenderMajor", majors);
-        }
+            var majors = await _context.Majors.ToListAsync();
+            // Thêm item "All Majors"
+            var allMajors = new List<object>
+            {
+                new { MajorID = 0, MajorName = "All Majors" }
+            };
+            allMajors.AddRange(majors.Select(m => new { m.MajorID, m.MajorName }));
 
-        private Task<List<Major>> GetMajorsAsync()
-        {
-            return Task.FromResult(_context.Majors.ToList());
+            return View(allMajors);
         }
     }
 }

@@ -12,83 +12,84 @@ namespace Lab5_TH.Controllers
     public class LearnerController : Controller
     {
         private readonly SchoolContext _context;
+        private readonly int _pageSize = 3; // Số phần tử trên 1 trang
 
         public LearnerController(SchoolContext context)
         {
             _context = context;
         }
 
-        public async Task<IActionResult> Index(int? mid)
+        // GET: Learner
+        public IActionResult Index(int? mid, string? keyword, int? pageIndex)
         {
-            ViewBag.Majors = new SelectList(_context.Majors, "MajorID", "MajorName");
+            var learners = GetFilteredLearners(mid, keyword);
 
-            IQueryable<Learner> learnersQuery = _context.Learners
-                .Include(l => l.Major)
-                .Include(l => l.Enrollments)
-                    .ThenInclude(e => e.Course);
+            // Lấy chỉ số trang
+            int page = pageIndex ?? 1;
+            if (page <= 0) page = 1;
 
-            if (mid.HasValue && mid > 0)
-            {
-                learnersQuery = learnersQuery.Where(l => l.MajorID == mid.Value);
-                ViewBag.SelectedMajor = mid.Value;
-            }
+            // Tính số trang
+            int totalCount = learners.Count();
+            int pageNum = (int)Math.Ceiling(totalCount / (float)_pageSize);
+            ViewBag.pageNum = pageNum;
+            ViewBag.mid = mid;
+            ViewBag.keyword = keyword;
+            ViewBag.currentPage = page;
 
-            var learners = await learnersQuery.ToListAsync();
+            // Lấy dữ liệu trang hiện tại
+            var result = learners.Skip(_pageSize * (page - 1))
+                                .Take(_pageSize)
+                                .Include(m => m.Major)
+                                .ToList();
 
-            if (Request.Headers["X-Requested-With"] == "XMLHttpRequest")
-            {
-                return PartialView("_LearnerTable", learners);
-            }
-
-            return View(learners);
+            return View(result);
         }
 
-        [HttpGet]
-        public async Task<IActionResult> LearnerByMajorID(int mid)
+        // GET: Learner/LearnerFilter - Action cho AJAX
+        public IActionResult LearnerFilter(int? mid, string? keyword, int? pageIndex)
         {
-            var learners = await _context.Learners
-                .Include(l => l.Major)
-                .Include(l => l.Enrollments)
-                    .ThenInclude(e => e.Course)
-                .Where(l => l.MajorID == mid)
-                .ToListAsync();
+            var learners = GetFilteredLearners(mid, keyword);
 
-            return PartialView("_LearnerTable", learners);
+            // Lấy chỉ số trang
+            int page = pageIndex ?? 1;
+            if (page <= 0) page = 1;
+
+            // Tính số trang
+            int totalCount = learners.Count();
+            int pageNum = (int)Math.Ceiling(totalCount / (float)_pageSize);
+            ViewBag.pageNum = pageNum;
+            ViewBag.mid = mid;
+            ViewBag.keyword = keyword;
+            ViewBag.currentPage = page;
+
+            // Lấy dữ liệu trang hiện tại
+            var result = learners.Skip(_pageSize * (page - 1))
+                                .Take(_pageSize)
+                                .Include(m => m.Major)
+                                .ToList();
+
+            return PartialView("_LearnerTable", result);
         }
 
-        [HttpGet]
-        public async Task<IActionResult> AllLearners()
+        private IQueryable<Learner> GetFilteredLearners(int? mid, string? keyword)
         {
-            var learners = await _context.Learners
-                .Include(l => l.Major)
-                .Include(l => l.Enrollments)
-                    .ThenInclude(e => e.Course)
-                .ToListAsync();
+            var learners = _context.Learners.AsQueryable();
 
-            return PartialView("_LearnerTable", learners);
-        }
-
-        public async Task<IActionResult> Details(int? id)
-        {
-            if (id == null)
+            // Lọc theo major nếu có
+            if (mid != null && mid > 0)
             {
-                return NotFound();
+                learners = learners.Where(l => l.MajorID == mid);
             }
 
-            var learner = await _context.Learners
-                .Include(l => l.Major)
-                .Include(l => l.Enrollments)
-                    .ThenInclude(e => e.Course)
-                .FirstOrDefaultAsync(m => m.LearnerID == id);
-
-            if (learner == null)
+            // Tìm kiếm theo keyword nếu có
+            if (!string.IsNullOrEmpty(keyword))
             {
-                return NotFound();
+                learners = learners.Where(l => l.FirstMidName.ToLower().Contains(keyword.ToLower())
+                                            || l.LastName.ToLower().Contains(keyword.ToLower()));
             }
 
-            return View(learner);
+            return learners;
         }
-
         public IActionResult Create()
         {
             ViewData["MajorID"] = new SelectList(_context.Majors, "MajorID", "MajorName");

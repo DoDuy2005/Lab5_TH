@@ -1,7 +1,7 @@
 ﻿@model IEnumerable<Lab5_TH.Models.Learner>
 
 @{
-    ViewData["Title"] = "Learner Management";
+    ViewData["Title"] = "Learner List";
     Layout = "~/Views/Shared/_Layout.cshtml";
 }
 
@@ -10,52 +10,43 @@
         <div class="col-12">
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <h1 class="display-6">
-                    <i class="fas fa-users text-primary me-2"></i>Learner Management
+                    <i class="fas fa-users text-primary me-2"></i>Learner List
                 </h1>
                 <a asp-action="Create" class="btn btn-primary">
-                    <i class="fas fa-plus me-1"></i>Create New
+                    <i class="fas fa-plus me-1"></i>Create New Student
                 </a>
             </div>
 
-            <!-- Filter Section -->
             <div class="row">
                 <div class="col-md-3">
-                    <!-- ViewComponent sẽ render ở đây -->
+                    <!-- Component Major để lọc -->
                     @await Component.InvokeAsync("Major")
-                    
-                    <!-- Loading Spinner -->
-                    <div id="loadingSpinner" class="text-center mt-3" style="display: none;">
-                        <div class="spinner-border text-primary" role="status">
-                            <span class="visually-hidden">Loading...</span>
-                        </div>
-                        <p class="mt-2 text-muted">Loading learners...</p>
-                    </div>
                 </div>
-                
+
                 <div class="col-md-9">
-                    <!-- Results Section -->
                     <div class="card">
                         <div class="card-header bg-light">
                             <div class="d-flex justify-content-between align-items-center">
                                 <h5 class="card-title mb-0">
-                                    <i class="fas fa-list me-1"></i>Learner List
+                                    <i class="fas fa-list me-1"></i>Learner Management
                                 </h5>
-                                <div class="d-flex align-items-center">
-                                    <span class="badge bg-secondary me-2" id="resultCount">
-                                        @Model.Count() learners
-                                    </span>
-                                    <div class="form-check form-switch">
-                                        <input class="form-check-input" type="checkbox" id="autoRefresh" checked>
-                                        <label class="form-check-label small" for="autoRefresh">
-                                            Auto Refresh
-                                        </label>
+
+                                <!-- Form tìm kiếm -->
+                                <form class="d-inline-block">
+                                    <div class="input-group">
+                                        <input id="keyword" class="form-control" name="keyword"
+                                               type="text" placeholder="Search learner..." value="@ViewBag.keyword" />
+                                        <button id="btnSearch" class="btn btn-outline-primary" type="button"> Tìm kiếm
+                                            <i class="fas fa-search"></i>
+                                        </button>
                                     </div>
-                                </div>
+                                </form>
                             </div>
                         </div>
+
                         <div class="card-body p-0">
-                            <div id="learnerTableContainer">
-                                <!-- Nội dung bảng sẽ được load bằng AJAX -->
+                            <div id="content">
+                                <!-- Partial view hiển thị bảng và phân trang -->
                                 @await Html.PartialAsync("_LearnerTable", Model)
                             </div>
                         </div>
@@ -68,82 +59,90 @@
 
 @section Scripts {
     <script>
-        function filterByMajor(majorId) {
-            $('#loadingSpinner').show();
-            $('#learnerTableContainer').hide();
-            
-            $('.list-group-item').removeClass('active');
-            if (majorId === 0) {
-                $('.list-group-item:first').addClass('active');
-            } else {
-                $('#major-' + majorId).addClass('active');
-            }
-            
-            let url = '';
-            if (majorId === 0) {
-                url = '@Url.Action("AllLearners", "Learner")';
-            } else {
-                url = '@Url.Action("LearnerByMajorID", "Learner")' + '?mid=' + majorId;
-            }
-            $.ajax({
-                url: url,
-                type: 'GET',
-                success: function (data) {
-                    $('#learnerTableContainer').html(data);
-                    updateResultCount();
-                },
-                error: function (xhr, status, error) {
-                    console.error('Error loading learners:', error);
-                    $('#learnerTableContainer').html(
-                        '<div class="alert alert-danger m-3">Error loading learners. Please try again.</div>'
-                    );
-                },
-                complete: function () {
-                    $('#loadingSpinner').hide();
-                    $('#learnerTableContainer').show();
+        $(document).ready(function () {
+            // Xử lý click vào phân trang
+            $(document).on('click', 'li.page-item a', function (e) {
+                e.preventDefault();
+                var page = $(this).closest('li.page-item').attr("page");
+                var mid = $(this).closest('li.page-item').attr("mid") || '';
+                var keyword = $(this).closest('li.page-item').attr("keyword") || '';
+
+                loadLearners(mid, keyword, page);
+            });
+
+            // Xử lý click vào lọc theo major (component Major)
+            $(document).on('click', '.major-filter', function (e) {
+                e.preventDefault();
+                var mid = $(this).attr("data-major-id");
+                var keyword = $('#keyword').val() || '';
+
+                loadLearners(mid, keyword, 1);
+            });
+
+            // Xử lý click vào nút tìm kiếm
+            $('#btnSearch').click(function (e) {
+                e.preventDefault();
+                var keyword = $('#keyword').val() || '';
+                var mid = $('.major-filter.active').attr('data-major-id') || '';
+
+                loadLearners(mid, keyword, 1);
+            });
+
+            // Xử lý nhấn Enter trong ô tìm kiếm
+            $('#keyword').keypress(function (e) {
+                if (e.which == 13) {
+                    e.preventDefault();
+                    $('#btnSearch').click();
                 }
             });
-        }
-        function updateResultCount() {
-            const rowCount = $('#learnerTableContainer tbody tr').length;
-            $('#resultCount').text(rowCount + ' learners');
-        }
 
-        function setupAutoRefresh() {
-            if ($('#autoRefresh').is(':checked')) {
-                console.log('Auto refresh enabled');
-            }
-        }
-        
-        $(document).ready(function () {
-            $('#autoRefresh').change(function () {
-                setupAutoRefresh();
-            });
+            // Hàm load learners bằng AJAX
+            function loadLearners(mid, keyword, pageIndex) {
+                var data = {
+                    mid: mid,
+                    keyword: keyword,
+                    pageIndex: pageIndex
+                };
 
-            $('[title]').tooltip();
-            
-            $('.list-group-item').click(function (e) {
-                e.preventDefault();
-            });
-        });
-        $(document).on('submit', 'form', function (e) {
-            const form = $(this);
-            if (form.attr('data-ajax') === 'true') {
-                e.preventDefault();
+                // Hiển thị loading
+                $('#content').html('<div class="text-center p-4"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div><p class="mt-2">Loading learners...</p></div>');
+
+                $.ajax({
+                    url: "@Url.Action("LearnerFilter", "Learner")",
+                    type: "GET",
+                    data: data,
+                    success: function (response) {
+                        $('#content').html(response);
+
+                        // Cập nhật active state cho major filter
+                        $('.major-filter').removeClass('active');
+                        if (mid) {
+                            $('.major-filter[data-major-id="' + mid + '"]').addClass('active');
+                        } else {
+                            $('.major-filter[data-major-id="0"]').addClass('active');
+                        }
+                    },
+                    error: function (xhr, status, error) {
+                        console.error('Error loading data:', error);
+                        $('#content').html('<div class="alert alert-danger m-3">Error loading learners. Please try again.</div>');
+                    }
+                });
             }
         });
     </script>
+}
+
+<style>
+    .major-filter {
+        cursor: pointer;
     }
-    
-    <style>
-        .enrollment-list {
-            max-height: 100px;
-            overflow-y: auto;
+
+        .major-filter.active {
+            background-color: #0d6efd !important;
+            color: white !important;
         }
-        
-        .table-hover tbody tr:hover {
-            background-color: rgba(0, 123, 255, 0.1);
-        }
-        
-        .badge {
-            font
+
+    .pagination {
+        margin-bottom: 0;
+    }
+</style>
